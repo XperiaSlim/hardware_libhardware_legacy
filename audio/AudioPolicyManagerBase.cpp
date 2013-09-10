@@ -831,7 +831,12 @@ audio_io_handle_t AudioPolicyManagerBase::getInput(int inputSource,
                                     uint32_t samplingRate,
                                     uint32_t format,
                                     uint32_t channelMask,
+#ifdef STE_AUDIO
+                                    AudioSystem::audio_in_acoustics acoustics,
+                                    audio_input_clients *inputClientId)
+#else
                                     AudioSystem::audio_in_acoustics acoustics)
+#endif
 {
     audio_io_handle_t input = 0;
     audio_devices_t device = getDeviceForInputSource(inputSource);
@@ -887,8 +892,12 @@ audio_io_handle_t AudioPolicyManagerBase::getInput(int inputSource,
                                     &inputDesc->mDevice,
                                     &inputDesc->mSamplingRate,
                                     &inputDesc->mFormat,
+#ifdef STE_AUDIO
+                                    &inputDesc->mChannelMask,
+                                    inputClientId);
+#else
                                     &inputDesc->mChannelMask);
-
+#endif
     // only accept input with the exact requested set of parameters
     if (input == 0 ||
         (samplingRate != inputDesc->mSamplingRate) ||
@@ -2005,6 +2014,9 @@ audio_devices_t AudioPolicyManagerBase::getNewDevice(audio_io_handle_t output, b
     audio_devices_t device = AUDIO_DEVICE_NONE;
 
     AudioOutputDescriptor *outputDesc = mOutputs.valueFor(output);
+#ifdef QCOM_HARDWARE
+    AudioOutputDescriptor *primaryOutputDesc = mOutputs.valueFor(mPrimaryOutput);
+#endif
     // check the following by order of priority to request a routing change if necessary:
     // 1: the strategy enforced audible is active on the output:
     //      use device for strategy enforced audible
@@ -2023,7 +2035,13 @@ audio_devices_t AudioPolicyManagerBase::getNewDevice(audio_io_handle_t output, b
     } else if (isInCall() ||
                     outputDesc->isUsedByStrategy(STRATEGY_PHONE)) {
         device = getDeviceForStrategy(STRATEGY_PHONE, fromCache);
-    } else if (outputDesc->isUsedByStrategy(STRATEGY_SONIFICATION)){
+#ifdef QCOM_HARDWARE
+    } else if (outputDesc->isUsedByStrategy(STRATEGY_SONIFICATION) ||
+               (primaryOutputDesc->isUsedByStrategy(STRATEGY_SONIFICATION)))
+#else
+    } else if (outputDesc->isUsedByStrategy(STRATEGY_SONIFICATION))
+#endif
+    {
         device = getDeviceForStrategy(STRATEGY_SONIFICATION, fromCache);
     } else if (outputDesc->isUsedByStrategy(STRATEGY_SONIFICATION_RESPECTFUL)) {
         device = getDeviceForStrategy(STRATEGY_SONIFICATION_RESPECTFUL, fromCache);
@@ -2355,12 +2373,7 @@ uint32_t AudioPolicyManagerBase::checkDeviceMuteStrategies(AudioOutputDescriptor
                     if (tempMute) {
                         setStrategyMute((routing_strategy)i, true, curOutput);
                         setStrategyMute((routing_strategy)i, false, curOutput,
-#ifdef QCOM_HARDWARE
-                                            desc->latency() * 4,
-#else
-                                            desc->latency() * 2,
-#endif
-                                            device);
+                                            desc->latency() * 2, device);
                     }
                     if (tempMute || mute) {
                         if (muteWaitMs < desc->latency()) {
