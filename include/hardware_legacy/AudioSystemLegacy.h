@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a contribution.
+ *
  * Copyright (C) 2008 The Android Open Source Project
  * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
@@ -357,6 +360,20 @@ public:
         FOR_SYSTEM,
         NUM_FORCE_USE
     };
+
+#ifdef STE_AUDIO
+// AUDIO_INPUT_CLIENT_ID_BASE provide a means to refer to client Id´s not explicitly defined in the enum audio_input_clients
+#define AUDIO_INPUT_CLIENT_ID_BASE AUDIO_INPUT_CLIENT_ID1
+
+    enum audio_input_clients {
+        AUDIO_INPUT_CLIENT_ID1 = 0x1,
+        AUDIO_INPUT_CLIENT_ID2 = 0x2,
+        AUDIO_INPUT_CLIENT_ID3 = 0x3,
+        AUDIO_INPUT_CLIENT_ID4 = 0x4,
+        AUDIO_INPUT_CLIENT_PLAYBACK = 0x80000000, // request client of playback type
+        AUDIO_INPUT_CLIENT_RECORD = 0x80000001   // request client of recording type
+    };
+#endif
 
     //
     // AudioPolicyService interface
