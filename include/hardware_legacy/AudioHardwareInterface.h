@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
  * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -223,11 +224,6 @@ public:
 
     /** set the audio volume of a voice call. Range is between 0.0 and 1.0 */
     virtual status_t    setVoiceVolume(float volume) = 0;
-
-#ifdef QCOM_FM_ENABLED
-    /** set the fm volume. Range is between 0.0 and 1.0 */
-    virtual status_t    setFmVolume(float volume) { return 0; }
-#endif
 
     /**
      * set the audio volume for all audio activities other than voice call.

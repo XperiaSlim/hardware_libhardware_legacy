@@ -138,14 +138,16 @@ static audio_io_handle_t ap_get_output(struct audio_policy *pol,
                                        uint32_t sampling_rate,
                                        audio_format_t format,
                                        audio_channel_mask_t channelMask,
-                                       audio_output_flags_t flags)
+                                       audio_output_flags_t flags,
+                                       const audio_offload_info_t *offloadInfo)
 {
     struct legacy_audio_policy *lap = to_lap(pol);
 
     ALOGV("%s: tid %d", __func__, gettid());
     return lap->apm->getOutput((AudioSystem::stream_type)stream,
                                sampling_rate, (int) format, channelMask,
-                               (AudioSystem::output_flags)flags);
+                               (AudioSystem::output_flags)flags,
+                               offloadInfo);
 }
 
 static int ap_start_output(struct audio_policy *pol, audio_io_handle_t output,
@@ -175,20 +177,11 @@ static audio_io_handle_t ap_get_input(struct audio_policy *pol, audio_source_t i
                                       uint32_t sampling_rate,
                                       audio_format_t format,
                                       audio_channel_mask_t channelMask,
-#ifdef STE_AUDIO
-                                      audio_in_acoustics_t acoustics,
-                                      audio_input_clients *inputClientId)
-#else
                                       audio_in_acoustics_t acoustics)
-#endif
 {
     struct legacy_audio_policy *lap = to_lap(pol);
     return lap->apm->getInput((int) inputSource, sampling_rate, (int) format, channelMask,
-#ifdef STE_AUDIO
-                              (AudioSystem::audio_in_acoustics)acoustics, inputClientId);
-#else
                               (AudioSystem::audio_in_acoustics)acoustics);
-#endif
 }
 
 static int ap_start_input(struct audio_policy *pol, audio_io_handle_t input)
@@ -311,6 +304,13 @@ static bool ap_is_stream_active(const struct audio_policy *pol, audio_stream_typ
     return lap->apm->isStreamActive((int) stream, in_past_ms);
 }
 
+static bool ap_is_stream_active_remotely(const struct audio_policy *pol, audio_stream_type_t stream,
+                                uint32_t in_past_ms)
+{
+    const struct legacy_audio_policy *lap = to_clap(pol);
+    return lap->apm->isStreamActiveRemotely((int) stream, in_past_ms);
+}
+
 static bool ap_is_source_active(const struct audio_policy *pol, audio_source_t source)
 {
     const struct legacy_audio_policy *lap = to_clap(pol);
@@ -321,6 +321,13 @@ static int ap_dump(const struct audio_policy *pol, int fd)
 {
     const struct legacy_audio_policy *lap = to_clap(pol);
     return lap->apm->dump(fd);
+}
+
+static bool ap_is_offload_supported(const struct audio_policy *pol,
+                                    const audio_offload_info_t *info)
+{
+    const struct legacy_audio_policy *lap = to_clap(pol);
+    return lap->apm->isOffloadSupported(*info);
 }
 
 static int create_legacy_ap(const struct audio_policy_device *device,
@@ -369,8 +376,14 @@ static int create_legacy_ap(const struct audio_policy_device *device,
     lap->policy.unregister_effect = ap_unregister_effect;
     lap->policy.set_effect_enabled = ap_set_effect_enabled;
     lap->policy.is_stream_active = ap_is_stream_active;
+#ifndef ICS_AUDIO_BLOB
+#ifndef MR1_AUDIO_BLOB
+    lap->policy.is_stream_active_remotely = ap_is_stream_active_remotely;
+#endif
     lap->policy.is_source_active = ap_is_source_active;
+#endif
     lap->policy.dump = ap_dump;
+    lap->policy.is_offload_supported = ap_is_offload_supported;
 
     lap->service = service;
     lap->aps_ops = aps_ops;

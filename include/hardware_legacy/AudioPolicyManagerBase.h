@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
+ * Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +54,10 @@ namespace android_audio_legacy {
 
 #define NUM_VOL_CURVE_KNEES 2
 
+// Default minimum length allowed for offloading a compressed track
+// Can be overridden by the audio.offload.min.duration.secs property
+#define OFFLOAD_DEFAULT_MIN_DURATION_SECS 60
+
 // ----------------------------------------------------------------------------
 // AudioPolicyManagerBase implements audio policy manager behavior common to all platforms.
 // Each platform must implement an AudioPolicyManager class derived from AudioPolicyManagerBase
@@ -87,7 +93,8 @@ public:
                                             uint32_t format = AudioSystem::FORMAT_DEFAULT,
                                             uint32_t channels = 0,
                                             AudioSystem::output_flags flags =
-                                                    AudioSystem::OUTPUT_FLAG_INDIRECT);
+                                                    AudioSystem::OUTPUT_FLAG_INDIRECT,
+                                            const audio_offload_info_t *offloadInfo = NULL);
         virtual status_t startOutput(audio_io_handle_t output,
                                      AudioSystem::stream_type stream,
                                      int session = 0);
@@ -99,12 +106,7 @@ public:
                                             uint32_t samplingRate,
                                             uint32_t format,
                                             uint32_t channels,
-#ifdef STE_AUDIO
-                                            AudioSystem::audio_in_acoustics acoustics,
-                                            audio_input_clients *inputClientId = NULL);
-#else
                                             AudioSystem::audio_in_acoustics acoustics);
-#endif
 
         // indicates to the audio policy manager that the input starts being used.
         virtual status_t startInput(audio_io_handle_t input);
@@ -128,7 +130,7 @@ public:
         // return the enabled output devices for the given stream type
         virtual audio_devices_t getDevicesForStream(AudioSystem::stream_type stream);
 
-        virtual audio_io_handle_t getOutputForEffect(const effect_descriptor_t *desc);
+        virtual audio_io_handle_t getOutputForEffect(const effect_descriptor_t *desc = NULL);
         virtual status_t registerEffect(const effect_descriptor_t *desc,
                                         audio_io_handle_t io,
                                         uint32_t strategy,
@@ -138,9 +140,15 @@ public:
         virtual status_t setEffectEnabled(int id, bool enabled);
 
         virtual bool isStreamActive(int stream, uint32_t inPastMs = 0) const;
+        // return whether a stream is playing remotely, override to change the definition of
+        //   local/remote playback, used for instance by notification manager to not make
+        //   media players lose audio focus when not playing locally
+        virtual bool isStreamActiveRemotely(int stream, uint32_t inPastMs = 0) const;
         virtual bool isSourceActive(audio_source_t source) const;
 
         virtual status_t dump(int fd);
+
+        virtual bool isOffloadSupported(const audio_offload_info_t& offloadInfo);
 
 protected:
 
@@ -230,7 +238,9 @@ protected:
         static const VolumeCurvePoint sSpeakerMediaVolumeCurve[AudioPolicyManagerBase::VOLCNT];
         // volume curve for sonification strategy on speakers
         static const VolumeCurvePoint sSpeakerSonificationVolumeCurve[AudioPolicyManagerBase::VOLCNT];
+        static const VolumeCurvePoint sSpeakerSonificationVolumeCurveDrc[AudioPolicyManagerBase::VOLCNT];
         static const VolumeCurvePoint sDefaultSystemVolumeCurve[AudioPolicyManagerBase::VOLCNT];
+        static const VolumeCurvePoint sDefaultSystemVolumeCurveDrc[AudioPolicyManagerBase::VOLCNT];
         static const VolumeCurvePoint sHeadsetSystemVolumeCurve[AudioPolicyManagerBase::VOLCNT];
         static const VolumeCurvePoint sDefaultVoiceVolumeCurve[AudioPolicyManagerBase::VOLCNT];
         static const VolumeCurvePoint sSpeakerVoiceVolumeCurve[AudioPolicyManagerBase::VOLCNT];
@@ -246,16 +256,20 @@ protected:
 
             status_t    dump(int fd);
 
-            audio_devices_t device();
-            void changeRefCount(AudioSystem::stream_type, int delta);
-            uint32_t refCount();
-            uint32_t strategyRefCount(routing_strategy strategy);
-            bool isUsedByStrategy(routing_strategy strategy) { return (strategyRefCount(strategy) != 0);}
+            audio_devices_t device() const;
+            void changeRefCount(AudioSystem::stream_type stream, int delta);
+
             bool isDuplicated() const { return (mOutput1 != NULL && mOutput2 != NULL); }
             audio_devices_t supportedDevices();
             uint32_t latency();
             bool sharesHwModuleWith(const AudioOutputDescriptor *outputDesc);
-            bool isActive(uint32_t inPastMs) const;
+            bool isActive(uint32_t inPastMs = 0) const;
+            bool isStreamActive(AudioSystem::stream_type stream,
+                                uint32_t inPastMs = 0,
+                                nsecs_t sysTime = 0) const;
+            bool isStrategyActive(routing_strategy strategy,
+                             uint32_t inPastMs = 0,
+                             nsecs_t sysTime = 0) const;
 
             audio_io_handle_t mId;              // output handle
             uint32_t mSamplingRate;             //
@@ -273,6 +287,7 @@ protected:
             const IOProfile *mProfile;          // I/O profile this output derives from
             bool mStrategyMutedByDevice[NUM_STRATEGIES]; // strategies muted because of incompatible
                                                 // device selection. See checkDeviceMuteStrategies()
+            uint32_t mDirectOpenCount; // number of clients using this output (direct outputs only)
         };
 
         // descriptor for audio inputs. Used to maintain current configuration of each opened audio input
@@ -345,11 +360,7 @@ protected:
 
         // change the route of the specified output. Returns the number of ms we have slept to
         // allow new routing to take effect in certain cases.
-#ifdef QCOM_HARDWARE
         virtual uint32_t setOutputDevice(audio_io_handle_t output,
-#else
-        uint32_t setOutputDevice(audio_io_handle_t output,
-#endif
                              audio_devices_t device,
                              bool force = false,
                              int delayMs = 0);
@@ -370,11 +381,7 @@ protected:
         virtual float computeVolume(int stream, int index, audio_io_handle_t output, audio_devices_t device);
 
         // check that volume change is permitted, compute and send new volume to audio hardware
-#ifdef QCOM_HARDWARE
         virtual status_t checkAndSetVolume(int stream, int index, audio_io_handle_t output, audio_devices_t device, int delayMs = 0, bool force = false);
-#else
-        status_t checkAndSetVolume(int stream, int index, audio_io_handle_t output, audio_devices_t device, int delayMs = 0, bool force = false);
-#endif
 
         // apply all stream volumes to the specified output and device
         void applyStreamVolumes(audio_io_handle_t output, audio_devices_t device, int delayMs = 0, bool force = false);
@@ -387,11 +394,7 @@ protected:
                              audio_devices_t device = (audio_devices_t)0);
 
         // Mute or unmute the stream on the specified output
-#ifdef QCOM_HARDWARE
         virtual void setStreamMute(int stream,
-#else
-        void setStreamMute(int stream,
-#endif
                            bool on,
                            audio_io_handle_t output,
                            int delayMs = 0,
@@ -449,16 +452,6 @@ protected:
 
         void updateDevicesAndOutputs();
 
-        // true if current platform requires a specific output to be opened for this particular
-        // set of parameters. This function is called by getOutput() and is implemented by platform
-        // specific audio policy manager.
-        virtual bool needsDirectOuput(audio_stream_type_t stream,
-                                      uint32_t samplingRate,
-                                      audio_format_t format,
-                                      audio_channel_mask_t channelMask,
-                                      audio_output_flags_t flags,
-                                      audio_devices_t device);
-
         virtual uint32_t getMaxEffectsCpuLoad();
         virtual uint32_t getMaxEffectsMemory();
 #ifdef AUDIO_POLICY_TEST
@@ -494,21 +487,23 @@ protected:
                                    uint32_t samplingRate,
                                    uint32_t format,
                                    uint32_t channelMask);
-#ifdef QCOM_HARDWARE
-        virtual IOProfile *getProfileForDirectOutput(audio_devices_t device,
-#else
         IOProfile *getProfileForDirectOutput(audio_devices_t device,
-#endif
                                                        uint32_t samplingRate,
                                                        uint32_t format,
                                                        uint32_t channelMask,
                                                        audio_output_flags_t flags);
+
+        audio_io_handle_t selectOutputForEffects(const SortedVector<audio_io_handle_t>& outputs);
+
+        bool isNonOffloadableEffectEnabled();
+
         //
         // Audio policy configuration file parsing (audio_policy.conf)
         //
         static uint32_t stringToEnum(const struct StringToEnum *table,
                                      size_t size,
                                      const char *name);
+        static bool stringToBool(const char *value);
         static audio_output_flags_t parseFlagNames(char *name);
         static audio_devices_t parseDeviceNames(char *name);
         void loadSamplingRates(char *name, IOProfile *profile);
@@ -562,6 +557,8 @@ protected:
         audio_devices_t mAttachedOutputDevices; // output devices always available on the platform
         audio_devices_t mDefaultOutputDevice; // output device selected by default at boot time
                                               // (must be in mAttachedOutputDevices)
+        bool mSpeakerDrcEnabled;// true on devices that use DRC on the DEVICE_CATEGORY_SPEAKER path
+                                // to boost soft sounds, used to adjust volume curves accordingly
 
         Vector <HwModule *> mHwModules;
 

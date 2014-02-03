@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -61,14 +62,15 @@ enum audio_source {
     AUDIO_SOURCE_CAMCORDER = 5,
     AUDIO_SOURCE_VOICE_RECOGNITION = 6,
     AUDIO_SOURCE_VOICE_COMMUNICATION = 7,
+#ifdef QCOM_HARDWARE
     AUDIO_SOURCE_REMOTE_SUBMIX = 8,
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
     AUDIO_SOURCE_FM_RX = 9,
     AUDIO_SOURCE_FM_RX_A2DP = 10,
     AUDIO_SOURCE_MAX = AUDIO_SOURCE_FM_RX_A2DP,
 #else
-    AUDIO_SOURCE_MAX = AUDIO_SOURCE_REMOTE_SUBMIX,
+    AUDIO_SOURCE_MAX = AUDIO_SOURCE_VOICE_COMMUNICATION,
 #endif
+
     AUDIO_SOURCE_LIST_END  // must be last - used to validate audio source type
 };
 
@@ -87,8 +89,8 @@ public:
         ENFORCED_AUDIBLE = 7, // Sounds that cannot be muted by user and must be routed to speaker
         DTMF             = 8,
         TTS              = 9,
-#ifdef QCOM_FM_ENABLED
-        FM               = 10,
+#ifdef QCOM_HARDWARE
+        INCALL_MUSIC     = 10,
 #endif
         NUM_STREAM_TYPES
     };
@@ -142,8 +144,6 @@ public:
         HE_AAC_V1           = 0x05000000,
         HE_AAC_V2           = 0x06000000,
         VORBIS              = 0x07000000,
-        EVRC                = 0x08000000,
-        QCELP               = 0x09000000,
         MAIN_FORMAT_MASK    = 0xFF000000,
         SUB_FORMAT_MASK     = 0x00FFFFFF,
         // Aliases
@@ -257,12 +257,8 @@ public:
 #ifdef QCOM_HARDWARE
         DEVICE_OUT_USB_ACCESSORY = 0x2000,
         DEVICE_OUT_USB_DEVICE = 0x4000,
-#endif
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
         DEVICE_OUT_FM = 0x8000,
         DEVICE_OUT_FM_TX = 0x10000,
-#endif
-#ifdef QCOM_HARDWARE
         DEVICE_OUT_ANC_HEADSET = 0x20000,
         DEVICE_OUT_ANC_HEADPHONE = 0x40000,
         DEVICE_OUT_PROXY = 0x80000,
@@ -278,18 +274,19 @@ public:
 #ifdef QCOM_HARDWARE
                 DEVICE_OUT_USB_ACCESSORY | DEVICE_OUT_USB_DEVICE |
                 DEVICE_OUT_ANC_HEADSET | DEVICE_OUT_ANC_HEADPHONE |
-                DEVICE_OUT_PROXY |
-#endif
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
                 DEVICE_OUT_FM | DEVICE_OUT_FM_TX |
-#endif
+                DEVICE_OUT_PROXY | DEVICE_OUT_DEFAULT),
+#else
                 DEVICE_OUT_DEFAULT),
+#endif
         DEVICE_OUT_ALL_A2DP = (DEVICE_OUT_BLUETOOTH_A2DP | DEVICE_OUT_BLUETOOTH_A2DP_HEADPHONES |
                 DEVICE_OUT_BLUETOOTH_A2DP_SPEAKER),
 #ifdef QCOM_HARDWARE
         DEVICE_OUT_ALL_USB = (DEVICE_OUT_USB_ACCESSORY | DEVICE_OUT_USB_DEVICE),
+#endif
 
         // input devices
+#ifdef QCOM_HARDWARE
         DEVICE_IN_COMMUNICATION = 0x100000,
         DEVICE_IN_AMBIENT = 0x200000,
         DEVICE_IN_BUILTIN_MIC = 0x400000,
@@ -299,8 +296,12 @@ public:
         DEVICE_IN_VOICE_CALL = 0x4000000,
         DEVICE_IN_BACK_MIC = 0x8000000,
         DEVICE_IN_ANC_HEADSET = 0x10000000,
+        DEVICE_IN_FM_RX = 0x20000000,
+        DEVICE_IN_FM_RX_A2DP = 0x40000000,
+        DEVICE_IN_DEFAULT = DEVICE_IN_BUILTIN_MIC,
+        DEVICE_IN_ANLG_DOCK_HEADSET = 0x80000000,
+        DEVICE_IN_PROXY = DEVICE_IN_ANLG_DOCK_HEADSET,
 #else
-        // input devices
         DEVICE_IN_COMMUNICATION = 0x10000,
         DEVICE_IN_AMBIENT = 0x20000,
         DEVICE_IN_BUILTIN_MIC = 0x40000,
@@ -311,26 +312,16 @@ public:
         DEVICE_IN_BACK_MIC = 0x800000,
         DEVICE_IN_DEFAULT = 0x80000000,
 #endif
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
-        DEVICE_IN_FM_RX = 0x20000000,
-        DEVICE_IN_FM_RX_A2DP = 0x40000000,
-#endif
-#ifdef QCOM_HARDWARE
-        DEVICE_IN_DEFAULT = DEVICE_IN_BUILTIN_MIC,
-        DEVICE_IN_ANLG_DOCK_HEADSET = 0x80000000,
-        DEVICE_IN_PROXY = DEVICE_IN_ANLG_DOCK_HEADSET,
-#endif
 
         DEVICE_IN_ALL = (DEVICE_IN_COMMUNICATION | DEVICE_IN_AMBIENT | DEVICE_IN_BUILTIN_MIC |
                 DEVICE_IN_BLUETOOTH_SCO_HEADSET | DEVICE_IN_WIRED_HEADSET | DEVICE_IN_AUX_DIGITAL |
-                DEVICE_IN_VOICE_CALL | DEVICE_IN_BACK_MIC |
 #ifdef QCOM_HARDWARE
-                DEVICE_IN_ANC_HEADSET | DEVICE_IN_PROXY | DEVICE_IN_ANLG_DOCK_HEADSET |
+                DEVICE_IN_VOICE_CALL | DEVICE_IN_BACK_MIC | DEVICE_IN_ANC_HEADSET |
+                DEVICE_IN_FM_RX | DEVICE_IN_FM_RX_A2DP | DEVICE_IN_DEFAULT |
+                DEVICE_IN_ANLG_DOCK_HEADSET | DEVICE_IN_PROXY)
+#else
+                DEVICE_IN_VOICE_CALL | DEVICE_IN_BACK_MIC | DEVICE_IN_DEFAULT)
 #endif
-#if defined(QCOM_FM_ENABLED) || defined(STE_FM)
-                DEVICE_IN_FM_RX | DEVICE_IN_FM_RX_A2DP |
-#endif
-                DEVICE_IN_DEFAULT)
     };
 
     // request to open a direct output with getOutput() (by opposition to sharing an output with other AudioTracks)
@@ -366,20 +357,6 @@ public:
         FOR_SYSTEM,
         NUM_FORCE_USE
     };
-
-#ifdef STE_AUDIO
-// AUDIO_INPUT_CLIENT_ID_BASE provide a means to refer to client Id´s not explicitly defined in the enum audio_input_clients
-#define AUDIO_INPUT_CLIENT_ID_BASE AUDIO_INPUT_CLIENT_ID1
-
-    enum audio_input_clients {
-        AUDIO_INPUT_CLIENT_ID1 = 0x1,
-        AUDIO_INPUT_CLIENT_ID2 = 0x2,
-        AUDIO_INPUT_CLIENT_ID3 = 0x3,
-        AUDIO_INPUT_CLIENT_ID4 = 0x4,
-        AUDIO_INPUT_CLIENT_PLAYBACK = 0x80000000, // request client of playback type
-        AUDIO_INPUT_CLIENT_RECORD = 0x80000001   // request client of recording type
-    };
-#endif
 
     //
     // AudioPolicyService interface

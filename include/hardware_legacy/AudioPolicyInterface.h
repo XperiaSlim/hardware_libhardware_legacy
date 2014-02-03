@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2009 The Android Open Source Project
- * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +22,7 @@
 #include <utils/String8.h>
 
 #include <hardware_legacy/AudioSystemLegacy.h>
+#include <hardware/audio_policy.h>
 
 namespace android_audio_legacy {
     using android::Vector;
@@ -93,7 +93,9 @@ public:
                                         uint32_t samplingRate = 0,
                                         uint32_t format = AudioSystem::FORMAT_DEFAULT,
                                         uint32_t channels = 0,
-                                        AudioSystem::output_flags flags = AudioSystem::OUTPUT_FLAG_INDIRECT) = 0;
+                                        AudioSystem::output_flags flags =
+                                                AudioSystem::OUTPUT_FLAG_INDIRECT,
+                                        const audio_offload_info_t *offloadInfo = NULL) = 0;
     // indicates to the audio policy manager that the output starts being used by corresponding stream.
     virtual status_t startOutput(audio_io_handle_t output,
                                  AudioSystem::stream_type stream,
@@ -110,12 +112,7 @@ public:
                                     uint32_t samplingRate = 0,
                                     uint32_t Format = AudioSystem::FORMAT_DEFAULT,
                                     uint32_t channels = 0,
-#ifdef STE_AUDIO
-                                    AudioSystem::audio_in_acoustics acoustics = (AudioSystem::audio_in_acoustics)0,
-                                    audio_input_clients *inputClientId = NULL) = 0;
-#else
                                     AudioSystem::audio_in_acoustics acoustics = (AudioSystem::audio_in_acoustics)0) = 0;
-#endif
     // indicates to the audio policy manager that the input starts being used.
     virtual status_t startInput(audio_io_handle_t input) = 0;
     // indicates to the audio policy manager that the input stops being used.
@@ -163,10 +160,13 @@ public:
     virtual status_t setEffectEnabled(int id, bool enabled) = 0;
 
     virtual bool isStreamActive(int stream, uint32_t inPastMs = 0) const = 0;
+    virtual bool isStreamActiveRemotely(int stream, uint32_t inPastMs = 0) const = 0;
     virtual bool isSourceActive(audio_source_t source) const = 0;
 
     //dump state
     virtual status_t    dump(int fd) = 0;
+
+    virtual bool isOffloadSupported(const audio_offload_info_t& offloadInfo) = 0;
 };
 
 
@@ -197,7 +197,8 @@ public:
                                          audio_format_t *pFormat,
                                          audio_channel_mask_t *pChannelMask,
                                          uint32_t *pLatencyMs,
-                                         audio_output_flags_t flags) = 0;
+                                         audio_output_flags_t flags,
+                                         const audio_offload_info_t *offloadInfo = NULL) = 0;
     // creates a special output that is duplicated to the two outputs passed as arguments. The duplication is performed by
     // a special mixer thread in the AudioFlinger.
     virtual audio_io_handle_t openDuplicateOutput(audio_io_handle_t output1, audio_io_handle_t output2) = 0;
@@ -218,17 +219,9 @@ public:
                                         audio_devices_t *pDevices,
                                         uint32_t *pSamplingRate,
                                         audio_format_t *pFormat,
-#ifdef STE_AUDIO
-                                        audio_channel_mask_t *pChannelMask,
-                                        audio_input_clients *pInputClientId = NULL) = 0;
-    // closes an audio input
-    virtual status_t closeInput(audio_io_handle_t input, audio_input_clients *pInputClientId = NULL) = 0;
-
-#else
                                         audio_channel_mask_t *pChannelMask) = 0;
     // closes an audio input
     virtual status_t closeInput(audio_io_handle_t input) = 0;
-#endif
     //
     // misc control functions
     //
@@ -258,11 +251,6 @@ public:
     virtual status_t moveEffects(int session,
                                      audio_io_handle_t srcOutput,
                                      audio_io_handle_t dstOutput) = 0;
-
-#ifdef QCOM_FM_ENABLED
-    // set FM volume.
-    virtual status_t setFmVolume(float volume, int delayMs = 0) { return 0; }
-#endif
 
 };
 
